@@ -48,16 +48,3 @@ impl crate::Plugin for Plugin {
         })
     }
 }
-
-#[derive(Deserialize)]
-struct TimespanResponse {
-    pub success: bool,
-    pub data: TimespanResponseData
-}
-
-#[derive(Deserialize)]
-struct TimespanResponseData {
-    pub success: bool,
-    pub start: u64,
-    pub end: u64
-}
