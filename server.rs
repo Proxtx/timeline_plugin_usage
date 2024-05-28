@@ -4,7 +4,9 @@ use {
     serde::Deserialize,
     serde_json::json,
     types::{api::CompressedEvent, timing::TimeRange},
-    url::Url
+    url::Url,
+    std::path::PathBuf,
+    tokio::fs::read_dir
 };
 
 #[derive(Deserialize)]
@@ -47,4 +49,45 @@ impl crate::Plugin for Plugin {
             Ok(resulting_vec)
         })
     }
+
+}
+
+impl Plugin {
+    async fn collect_data(&self, range: TimeRange) -> Result<Vec<Usage>, String> {
+        let mut dir = match read_dir(&self.config.usage_files).await {
+            Ok(v) => v,
+            Err(e) => {
+                return Err(format!("Unable to read usage files: {}", e));
+            }
+        };
+
+        let mut usage = Vec::new();
+
+        while let Some(v) = match dir.next_entry().await {
+            Ok(v) => v,
+            Err(e) => {
+                return Err(format!("Unable to read next directory entry"));
+            }
+        } {
+            //check if filename is smaller than range start
+                //then check if next filename is bigger than start (iterator.peek)
+                    //read file and skip lines until the times are bigger than start. Now push the lines to usage as long as the times are smaller than end
+                //else
+                    //continue
+            //else check if filename is smaller than end
+                //read file until times are bigger than end
+                    //if times are actually bigger than end
+                        //break
+            //else
+                //break
+        }
+    
+        Ok(usage)
+    }
+}
+
+#[derive(Debug, Clone)]
+enum Usage {
+    StartUsing(u32, String),
+    StopUsing(u32)
 }
