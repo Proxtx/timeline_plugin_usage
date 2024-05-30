@@ -65,7 +65,7 @@ impl crate::Plugin for Plugin {
         Box::pin(async move {
             let res = match self.get_eventerized_usage_statistics(&query_range).await {
                 Ok(v) => v,
-                Err(e) => APIError::Custom(e)
+                Err(e) => return Err(APIError::Custom(e))
             };
 
             Ok(res)
