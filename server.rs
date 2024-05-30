@@ -62,8 +62,9 @@ impl crate::Plugin for Plugin {
         >,
     > {
         let query_range = query_range.clone();
+        let files = self.config.usage_files.clone();
         Box::pin(async move {
-            let res = match self.get_eventerized_usage_statistics(&query_range).await {
+            let res = match Plugin::get_eventerized_usage_statistics(files, &query_range).await {
                 Ok(v) => v,
                 Err(e) => return Err(APIError::Custom(e))
             };
@@ -86,9 +87,9 @@ struct UsageStatistic {
 
 impl Plugin {
 
-    async fn get_eventerized_usage_statistics (&self, range: &TimeRange) ->  Result<Vec<CompressedEvent>, String> {
-        let data = self.collect_data(range).await?;
-        let statistics = self.generate_usage_statistics(data, Duration::hours(1))?;
+    async fn get_eventerized_usage_statistics (files: PathBuf, range: &TimeRange) ->  Result<Vec<CompressedEvent>, String> {
+        let data = Plugin::collect_data(files, range).await?;
+        let statistics = Plugin::generate_usage_statistics(data, Duration::hours(1))?;
 
         let mut resulting_events = Vec::new();
 
@@ -109,7 +110,7 @@ impl Plugin {
         Ok(resulting_events)
     }
 
-    fn generate_usage_statistics (&self, data: Vec<UsageEvent>, time_step: Duration) -> Result<Vec<UsageStatistic>, String> {
+    fn generate_usage_statistics (data: Vec<UsageEvent>, time_step: Duration) -> Result<Vec<UsageStatistic>, String> {
         let mut current_time = data[0].time;
         let mut result = vec![UsageStatistic {
             usage_statistic: HashMap::new(),
@@ -158,8 +159,8 @@ impl Plugin {
         Ok(result)
     }
 
-    async fn collect_data(&self, range: &TimeRange) -> Result<Vec<UsageEvent>, String> {
-        let mut dir = match read_dir(&self.config.usage_files).await {
+    async fn collect_data(files: PathBuf, range: &TimeRange) -> Result<Vec<UsageEvent>, String> {
+        let mut dir = match read_dir(&files).await {
             Ok(v) => v,
             Err(e) => {
                 return Err(format!("Unable to read usage files: {}", e));
@@ -208,7 +209,7 @@ impl Plugin {
                     None => continue,
                 };
                 if string_timestamp_to_datetime(&theo_next.0)? > range.start {
-                    let data_in_file = self.read_file(&entry.1).await?;
+                    let data_in_file = Plugin::read_file(&entry.1).await?;
                     for data in data_in_file {
                         if range.includes(&data.time) {
                             usage.push(data);
@@ -218,7 +219,7 @@ impl Plugin {
                     continue;
                 }
             } else if string_timestamp_to_datetime(&entry.0)? <= range.end {
-                let data_in_file = self.read_file(&entry.1).await?;
+                let data_in_file = Plugin::read_file(&entry.1).await?;
                 for data in data_in_file {
                     if range.includes(&data.time) {
                         usage.push(data)
@@ -234,7 +235,7 @@ impl Plugin {
         Ok(usage)
     }
 
-    async fn read_file(&self, path: &Path) -> Result<Vec<UsageEvent>, String> {
+    async fn read_file(path: &Path) -> Result<Vec<UsageEvent>, String> {
         let content = match fs::File::open(path).await {
             Ok(mut v) => {
                 let mut str = String::new();
