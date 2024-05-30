@@ -1,25 +1,25 @@
 use {
-    crate::{Plugin as _, PluginData},
-    chrono::{DateTime, Duration, TimeDelta, Utc},
+    crate::PluginData,
+    chrono::{DateTime, Duration, Utc},
     serde::{Deserialize, Serialize},
-    serde_json::json,
-    std::{collections::HashMap, path::{Path, PathBuf}},
+    std::{collections::HashMap, path::{Path, PathBuf}, sync::Arc},
     tokio::{
-        fs::{self, read_dir},
+        fs::{self, read_dir, File},
         io::AsyncReadExt,
     },
     types::{api::{APIError, CompressedEvent}, timing::TimeRange},
-    url::Url,
 };
 
 #[derive(Deserialize)]
 struct ConfigData {
     pub usage_files: PathBuf,
+    pub apps_file: PathBuf
 }
 
 pub struct Plugin {
-    plugin_data: PluginData,
+    _plugin_data: PluginData,
     config: ConfigData,
+    apps_map: Arc<AppsMap>
 }
 
 impl crate::Plugin for Plugin {
@@ -39,9 +39,17 @@ impl crate::Plugin for Plugin {
             )
         });
 
+        let apps_map = match AppsMap::new(&config.apps_file).await {
+            Ok(v) => v,
+            Err(e) => {
+                panic!("Unable to init app names lookup table: {}", e);
+            }
+        };
+
         Plugin {
-            plugin_data: data,
+            _plugin_data: data,
             config,
+            apps_map: Arc::new(apps_map)
         }
     }
 
@@ -63,8 +71,9 @@ impl crate::Plugin for Plugin {
     > {
         let query_range = query_range.clone();
         let files = self.config.usage_files.clone();
+        let apps_map = self.apps_map.clone();
         Box::pin(async move {
-            let res = match Plugin::get_eventerized_usage_statistics(files, &query_range).await {
+            let res = match Plugin::get_eventerized_usage_statistics(files, &query_range, apps_map).await {
                 Ok(v) => v,
                 Err(e) => return Err(APIError::Custom(e))
             };
@@ -87,19 +96,23 @@ struct UsageStatistic {
 
 impl Plugin {
 
-    async fn get_eventerized_usage_statistics (files: PathBuf, range: &TimeRange) ->  Result<Vec<CompressedEvent>, String> {
+    async fn get_eventerized_usage_statistics (files: PathBuf, range: &TimeRange, apps_map: Arc<AppsMap>) ->  Result<Vec<CompressedEvent>, String> {
         let data = Plugin::collect_data(files, range).await?;
-        let statistics = Plugin::generate_usage_statistics(data, Duration::hours(1))?;
+        let statistics = Plugin::generate_usage_statistics(data, range.start, Duration::hours(1))?;
 
         let mut resulting_events = Vec::new();
 
         for statistic in statistics {
             for (app, duration) in statistic.usage_statistic {
+                let app_name = match apps_map.get_app_name(&app).await {
+                    Some(v) => v.clone(),
+                    None => app
+                };
                 resulting_events.push(CompressedEvent {
                     time: types::timing::Timing::Range(statistic.timing.clone()),
-                    title: app.clone(),
+                    title: app_name.clone(),
                     data: Box::new(AppEvent {
-                        app,
+                        app: app_name,
                         duration: duration.num_minutes() as u64
                     }),
                 })
@@ -110,8 +123,8 @@ impl Plugin {
         Ok(resulting_events)
     }
 
-    fn generate_usage_statistics (data: Vec<UsageEvent>, time_step: Duration) -> Result<Vec<UsageStatistic>, String> {
-        let mut current_time = data[0].time;
+    fn generate_usage_statistics (data: Vec<UsageEvent>, start: DateTime<Utc>, time_step: Duration) -> Result<Vec<UsageStatistic>, String> {
+        let mut current_time = start;
         let mut result = vec![UsageStatistic {
             usage_statistic: HashMap::new(),
             timing: TimeRange { start: current_time, end: current_time + time_step }
@@ -148,10 +161,10 @@ impl Plugin {
                 };
                 #[allow(clippy::map_entry)]
                 if statistic.contains_key(&updated_app) {
-                    statistic.insert(updated_app, used_for);
+                    statistic.get_mut(&updated_app).unwrap().checked_add(&used_for).unwrap();
                 }
                 else {
-                    statistic.get_mut(&updated_app).unwrap().checked_add(&used_for).unwrap();
+                    statistic.insert(updated_app, used_for);
                 }
             }
         }
@@ -260,7 +273,7 @@ impl Plugin {
         Ok(content
             .split('\n')
             .flat_map(|v| {
-                let mut split = v.split(":");
+                let mut split = v.split(':');
                 let time = split.next();
                 let time = match time {
                     Some(v) => match v.parse() {
@@ -312,5 +325,35 @@ fn string_timestamp_to_datetime(timestamp: &str) -> Result<DateTime<Utc>, String
     ) {
         Some(v) => Ok(v),
         None => Err("Timestamp can't be converted to DateTime".to_string()),
+    }
+}
+
+struct AppsMap {
+    apps_map: HashMap<String, String>
+}
+
+impl AppsMap {
+    pub async fn new (path: &Path) -> Result<AppsMap, String> {
+        let apps_map = match File::open(path).await {
+            Ok(mut v) => {  
+                let mut str = String::new();
+                if let Err(e) = v.read_to_string(&mut str).await {
+                    return Err(format!("Error reading apps file: {}", e));
+                }
+
+                str.split('\n').filter_map(|line| {
+                    line.split_once(':').map(|v| (v.0.to_string(), v.1.to_string()))
+                }).collect()
+            },
+            Err(e) => {
+                return Err(format!("Error reading apps file: {}", e));
+            }
+        };
+
+        Ok(AppsMap { apps_map })
+    }
+
+    pub async fn get_app_name (&self, package: &str) -> Option<&String> {
+        self.apps_map.get(package)
     }
 }
