@@ -149,23 +149,24 @@ impl Plugin {
                     timing: TimeRange { start: current_time, end: current_time + time_step }
                 })
             }
+
+            let statistic = &mut result.last_mut().unwrap().usage_statistic;
+            let used_for = match iterator.peek() {
+                Some(next_event) => {
+                    next_event.time - data_point.time
+                },
+                None => {
+                    continue;
+                }
+            };
+
+            #[allow(clippy::map_entry)]
+            if statistic.contains_key(&updated_app) {
+                let new_used_for = statistic.get(&updated_app).unwrap().checked_add(&used_for).unwrap();
+                statistic.insert(updated_app, new_used_for);
+            }
             else {
-                let statistic = &mut result.last_mut().unwrap().usage_statistic;
-                let used_for = match iterator.peek() {
-                    Some(next_event) => {
-                        next_event.time - data_point.time
-                    },
-                    None => {
-                        continue;
-                    }
-                };
-                #[allow(clippy::map_entry)]
-                if statistic.contains_key(&updated_app) {
-                    statistic.get_mut(&updated_app).unwrap().checked_add(&used_for).unwrap();
-                }
-                else {
-                    statistic.insert(updated_app, used_for);
-                }
+                statistic.insert(updated_app, used_for);
             }
         }
 
