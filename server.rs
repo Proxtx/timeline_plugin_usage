@@ -197,8 +197,10 @@ impl Plugin {
                     ))
                 }
             };
-            dir_entries.push((filename, v.path()));
+            dir_entries.push((string_timestamp_to_datetime(&filename)?, v.path()));
         }
+
+        dir_entries.sort_by(|a, b| {a.0.cmp(&b.0)});
 
         let mut usage = Vec::new();
 
@@ -216,12 +218,12 @@ impl Plugin {
             //break
             //else
             //break
-            if string_timestamp_to_datetime(&entry.0)? < range.start {
+            if entry.0 < range.start {
                 let theo_next = match dir_entries_iterator.peek() {
                     Some(v) => v,
                     None => continue,
                 };
-                if string_timestamp_to_datetime(&theo_next.0)? > range.start {
+                if theo_next.0 > range.start {
                     let data_in_file = Plugin::read_file(&entry.1).await?;
                     for data in data_in_file {
                         if range.includes(&data.time) {
@@ -231,7 +233,7 @@ impl Plugin {
                 } else {
                     continue;
                 }
-            } else if string_timestamp_to_datetime(&entry.0)? <= range.end {
+            } else if entry.0 <= range.end {
                 let data_in_file = Plugin::read_file(&entry.1).await?;
                 for data in data_in_file {
                     if range.includes(&data.time) {
