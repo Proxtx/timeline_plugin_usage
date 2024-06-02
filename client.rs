@@ -23,9 +23,25 @@ impl crate::plugin_manager::Plugin for Plugin {
         Ok(Box::new(
             move || -> View {
                 view! {
-                    <div style="display: flex; flex-direction: column; width: 100%; gap: calc(var(--contentSpacing) * 0.5); background-color: var(--accentColor1); padding: calc(var(--contentSpacing)); color: var(--lightColor); box-sizing: border-box;">
-                        <h3>{move || { data.app.clone() }}</h3>
-                        <a>{move || { format!("{}m", data.duration) }}</a>
+                    <div style="display: flex; flex-direction: row; width: 100%; gap: calc(var(--contentSpacing) * 0.5); background-color: var(--accentColor1);align-items: start;">
+                        <img
+                            style="width: calc(var(--contentSpacing) * 5); aspect-ratio: 1; padding: var(--contentSpacing);"
+                            src=move || {
+                                crate::api::relative_url(
+                                        &format!(
+                                            "/api/plugin/timeline_plugin_usage/icon/{}",
+                                            data.package,
+                                        ),
+                                    )
+                                    .unwrap()
+                                    .to_string()
+                            }
+                        />
+
+                        <div style="padding-top: calc(var(--contentSpacing) * 0.5); padding-bottom: calc(var(--contentSpacing) * 0.5); color: var(--lightColor); overflow: hidden;">
+                            <h3>{move || { data.app.clone() }}</h3>
+                            <a>{move || { format!("{}m", data.duration) }}</a>
+                        </div>
                     </div>
                 }.into_view()
             }
@@ -36,5 +52,6 @@ impl crate::plugin_manager::Plugin for Plugin {
 #[derive(Deserialize)]
 struct AppEvent {
     pub app: String,
-    pub duration: u64
+    pub duration: u64,
+    pub package: String
 }

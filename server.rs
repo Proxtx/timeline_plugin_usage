@@ -1,19 +1,15 @@
 use {
-    crate::PluginData,
-    chrono::{DateTime, Duration, Utc},
-    serde::{Deserialize, Serialize},
-    std::{collections::HashMap, path::{Path, PathBuf}, sync::Arc},
-    tokio::{
+    crate::PluginData, chrono::{DateTime, Duration, Utc}, rocket::{fs::NamedFile, get, routes, State}, serde::{Deserialize, Serialize}, std::{collections::HashMap, path::{Path, PathBuf}, sync::Arc}, tokio::{
         fs::{self, read_dir, File},
         io::AsyncReadExt,
-    },
-    types::{api::{APIError, CompressedEvent}, timing::TimeRange},
+    }, types::{api::{APIError, CompressedEvent}, timing::TimeRange}
 };
 
-#[derive(Deserialize)]
-struct ConfigData {
+#[derive(Deserialize, Clone)]
+pub struct ConfigData {
     pub usage_files: PathBuf,
-    pub apps_file: PathBuf
+    pub apps_file: PathBuf,
+    pub app_icon_files: PathBuf
 }
 
 pub struct Plugin {
@@ -81,12 +77,30 @@ impl crate::Plugin for Plugin {
             Ok(res)
         })
     }
+
+    fn rocket_build_access(&self, rocket: rocket::Rocket<rocket::Build>) -> rocket::Rocket<rocket::Build> {
+        rocket.manage(self.config.clone())
+    }
+
+    fn get_routes() -> Vec<rocket::Route>
+        where
+            Self: Sized, {
+        routes![app_icon]
+    }
+}
+
+#[get("/icon/<app>")]
+pub async fn app_icon(app: &str, config: &State<ConfigData>) -> Option<NamedFile> {
+    let mut path = config.app_icon_files.clone();
+    path.push(app);
+    NamedFile::open(path).await.ok()
 }
 
 #[derive(Serialize)]
 struct AppEvent {
     pub app: String,
-    pub duration: u64
+    pub duration: u64,
+    pub package: String
 }
 
 struct UsageStatistic {
@@ -95,7 +109,6 @@ struct UsageStatistic {
 }
 
 impl Plugin {
-
     async fn get_eventerized_usage_statistics (files: PathBuf, range: &TimeRange, apps_map: Arc<AppsMap>) ->  Result<Vec<CompressedEvent>, String> {
         let data = Plugin::collect_data(files, range).await?;
         let statistics = Plugin::generate_usage_statistics(data, range.start, Duration::hours(1))?;
@@ -106,14 +119,15 @@ impl Plugin {
             for (app, duration) in statistic.usage_statistic {
                 let app_name = match apps_map.get_app_name(&app).await {
                     Some(v) => v.clone(),
-                    None => app
+                    None => app.clone()
                 };
                 resulting_events.push(CompressedEvent {
                     time: types::timing::Timing::Range(statistic.timing.clone()),
                     title: app_name.clone(),
                     data: Box::new(AppEvent {
                         app: app_name,
-                        duration: duration.num_minutes() as u64
+                        duration: duration.num_minutes() as u64,
+                        package: app
                     }),
                 })
             }
