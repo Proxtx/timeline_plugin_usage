@@ -1,6 +1,6 @@
 use {
     crate::PluginData, chrono::{DateTime, Duration, Utc}, rocket::{fs::NamedFile, get, routes, State}, serde::{Deserialize, Serialize}, std::{collections::HashMap, path::{Path, PathBuf}, sync::Arc}, tokio::{
-        fs::{self, read_dir, File},
+        fs::{self, read_dir, File, try_exists},
         io::AsyncReadExt,
     }, types::{api::{APIError, CompressedEvent}, timing::TimeRange}
 };
@@ -93,7 +93,10 @@ impl crate::Plugin for Plugin {
 pub async fn app_icon(app: &str, config: &State<ConfigData>) -> Option<NamedFile> {
     let mut path = config.app_icon_files.clone();
     path.push(app);
-    NamedFile::open(path).await.ok()
+    match try_exists(&path).await {
+        Ok(true) => NamedFile::open(path).await.ok(),
+        Err(_) | Ok(false) => NamedFile::open("../plugins/timeline_plugin_usage/icon.svg").await.ok()
+    }
 }
 
 #[derive(Serialize)]
