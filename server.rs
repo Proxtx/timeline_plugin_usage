@@ -9,7 +9,8 @@ use {
 pub struct ConfigData {
     pub usage_files: PathBuf,
     pub apps_file: PathBuf,
-    pub app_icon_files: PathBuf
+    pub app_icon_files: PathBuf,
+    pub default_app_icon: Option<PathBuf>
 }
 
 pub struct Plugin {
@@ -95,7 +96,10 @@ pub async fn app_icon(app: &str, config: &State<ConfigData>) -> Option<NamedFile
     path.push(app);
     match try_exists(&path).await {
         Ok(true) => NamedFile::open(path).await.ok(),
-        Err(_) | Ok(false) => NamedFile::open("../plugins/timeline_plugin_usage/icon.svg").await.ok()
+        Err(_) | Ok(false) => match &config.default_app_icon {
+            None => NamedFile::open("../plugins/timeline_plugin_usage/icon.svg").await.ok(),
+            Some(v) => NamedFile::open(v).await.ok()
+        }
     }
 }
 
